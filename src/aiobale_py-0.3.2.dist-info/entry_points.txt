@@ -1,0 +1,2 @@
+[console_scripts]
+aiobale = aiobale.cli.main:main
