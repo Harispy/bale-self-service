@@ -19,7 +19,7 @@ class Chat(BaleObject):
     id: int = Field(..., alias="2")
     """The unique identifier for the chat. This field is required and uses an alias '2' for serialization."""
 
-    access_hash: Optional[int] = Field(None, alias="3")
+    access_hash: Optional[int] = Field(None, exclude=True)
     """Optional access hash."""
 
     if TYPE_CHECKING:

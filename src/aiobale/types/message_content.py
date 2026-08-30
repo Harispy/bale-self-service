@@ -34,7 +34,7 @@ class MessageCaption(BaleObject):
     content: Optional[str] = Field(None, alias="1")
     """The caption text."""
 
-    mentions: Optional[Union[List, Dict]] = Field(default_factory=dict, alias="2")
+    mentions: Optional[Any] = Field(default_factory=dict, alias="2")
     """
     Mentions inside the caption.
     This may include user references or tags.
@@ -53,7 +53,7 @@ class MessageCaption(BaleObject):
             __pydantic__self__,
             *,
             content: Optional[str] = None,
-            mentions: Optional[Union[List, Dict]] = None,
+            mentions: Optional[Any] = None,
             ext: Optional[Dict] = None,
             **__pydantic_kwargs,
         ) -> None:

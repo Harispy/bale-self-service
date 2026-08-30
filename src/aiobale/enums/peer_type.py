@@ -13,4 +13,6 @@ class PeerType(int, Enum):
     """Represents private peers, such as `Users` and `Bots`."""
     
     GROUP = 2
+    CHANNEL = 3
+    THREAD = 6
     """Represents group peers, such as `Channels` and `Groups`."""
