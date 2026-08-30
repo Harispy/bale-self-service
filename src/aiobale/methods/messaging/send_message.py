@@ -2,6 +2,7 @@ from pydantic import Field
 from typing import TYPE_CHECKING, Any, Optional
 
 from ...types import Chat, Peer, MessageContent, InfoMessage
+from ...types.thread_info import ThreadInfo
 from ...types.responses import MessageResponse
 from ...enums import Services
 from ..base import BaleMethod
@@ -41,6 +42,7 @@ class SendMessage(BaleMethod):
     """
 
     chat: Chat = Field(..., alias="6")
+    thread_info: Optional[ThreadInfo] = Field(None, alias="8")
     """
     The chat context in which the message is being sent.
     """

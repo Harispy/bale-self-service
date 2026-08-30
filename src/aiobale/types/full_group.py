@@ -73,6 +73,9 @@ class FullGroup(BaleObject):
     is_suspend: IntBool = Field(False, alias="25")
     """True if the group is suspended by moderation."""
 
+    discussion_group_id: Optional[int] = Field(None, alias="26")
+    """ID of the linked discussion group for comments, if this is a channel."""
+
     privacy_mode: Optional[PrivacyMode] = Field(None, alias="28")
     """Defines who can see and join the group (e.g., public, private)."""
 
@@ -127,6 +130,7 @@ class FullGroup(BaleObject):
             ex_info: Optional[ExInfo] = None,
             available_reactions: Optional[List[str]] = None,
             is_suspend: IntBool = False,
+            discussion_group_id: Optional[int] = None,
             privacy_mode: Optional[PrivacyMode] = None,
             **__pydantic_kwargs
         ) -> None:
@@ -148,6 +152,7 @@ class FullGroup(BaleObject):
                 ex_info=ex_info,
                 available_reactions=available_reactions or [],
                 is_suspend=is_suspend,
+                discussion_group_id=discussion_group_id,
                 privacy_mode=privacy_mode,
                 **__pydantic_kwargs
             )
