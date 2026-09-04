@@ -64,17 +64,17 @@ class MessageResponse(DefaultResponse):
         prev_message = OtherMessage.model_validate(mapped_prev_data) if mapped_prev_data else None
 
         # Normalize document thumbnail image bytes to hex string if present
-        if hasattr(method.content, "document") and getattr(method.content.document, "thumb", None):
+        if method is not None and hasattr(method.content, "document") and getattr(method.content.document, "thumb", None):
             thumb = method.content.document.thumb
             if isinstance(thumb.image, bytes):
                 thumb.image = thumb.image.hex()
 
         data["message"] = Message(
-            chat=method.chat,
+            chat=getattr(method, "chat", None),
             sender_id=client.id,
             date=data.get("2", 0),  # timestamp in milliseconds
-            message_id=method.message_id,
-            content=method.content,
+            message_id=getattr(method, "message_id", data.get("1", 0)),
+            content=getattr(method, "content", None),
             previous_message=prev_message,
         ).as_(client)
 

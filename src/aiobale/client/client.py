@@ -29,7 +29,7 @@ from types import TracebackType
 from contextlib import asynccontextmanager, suppress
 
 from .session import AiohttpSession, BaseSession
-from ..exceptions import AiobaleError
+from ..exceptions import AiobaleError, BaleError
 from ..utils import parse_jwt, generate_id, clean_grpc, extract_join_token
 from ..methods import (
     SendMessage,
@@ -343,6 +343,7 @@ class Client:
         self._user_agent = user_agent
 
         self._ping_task = None
+        self._connection_task = None
         self._ping_id = 0
         self._lock = asyncio.Lock()
         self._tasks = set()
@@ -473,12 +474,16 @@ class Client:
 
     async def _cleanup_session(self):
         if self.session and not self.session.is_closed():
-            await self.session.close()
+            try:
+                await self.session.close()
+            except Exception:
+                pass
 
         if self._ping_task:
             self._ping_task.cancel()
-            with suppress(asyncio.CancelledError):
-                await self._ping_task
+            if asyncio.current_task() != self._ping_task:
+                with suppress(asyncio.CancelledError):
+                    await self._ping_task
             self._ping_task = None
 
     async def _send_ping(self):
@@ -494,8 +499,8 @@ class Client:
 
             try:
                 await self.session.send_bytes(data, f"ping_{ping_id}")
-            except RuntimeError:
-                logger.warning(f"Ping failed. Closing session to trigger restart. (Client: {self.id})")
+            except Exception as exc:
+                logger.warning(f"Ping failed ({exc}). Closing session to trigger restart. (Client: {self.id})")
                 await self._cleanup_session()
 
     async def _ping_loop(self, interval=5):
@@ -515,6 +520,55 @@ class Client:
         except Exception as e:
             logger.error(f"Listen failed (Client: {self.id}): {e}")
             await self._cleanup_session()
+
+    async def _connection_loop(self, ready_future: Optional[asyncio.Future] = None):
+        async with self._lifespan(self):
+            try:
+                while not self._stopped:
+                    await self._cleanup_session()
+
+                    async with self._lock:
+                        try:
+                            logger.info(f"Trying to connect... (Client: {self.id})")
+                            await self.session.connect(self.__token)
+                            await self.session.handshake_request()
+                            logger.info(f"Connected successfully. (Client: {self.id})")
+
+                            self._ping_task = self._create_task(self._ping_loop())
+                            listen_task = self._create_task(self._safe_listen())
+                            if ready_future and not ready_future.done():
+                                ready_future.set_result(True)
+                        except Exception as e:
+                            logger.error(f"Connection failed (Client: {self.id}): {e}")
+                            if ready_future and not ready_future.done() and isinstance(e, BaleError):
+                                ready_future.set_exception(e)
+                                return
+                            await asyncio.sleep(5)
+                            continue
+
+                    try:
+                        await listen_task
+                    except asyncio.CancelledError:
+                        logger.info(f"Listening task cancelled (Client: {self.id}).")
+                        break
+                    except Exception as e:
+                        logger.error(f"Listening task ended with error (Client: {self.id}): {e}")
+                        await asyncio.sleep(2)
+
+            except asyncio.CancelledError:
+                logger.info(f"Connection loop cancelled (Client: {self.id}).")
+            except KeyboardInterrupt:
+                logger.info(f"KeyboardInterrupt received, stopping client (Client: {self.id})...")
+                await self.stop()
+            except Exception as e:
+                logger.error(f"Unhandled exception in connection loop (Client: {self.id}): {e}")
+                if ready_future and not ready_future.done():
+                    ready_future.set_exception(e)
+                await self.stop()
+                raise
+            finally:
+                if self in _CLIENTS:
+                    _CLIENTS.remove(self)
 
     async def start(
         self,
@@ -545,44 +599,12 @@ class Client:
         if signal_handling:
             _install_global_signal_handlers(loop)
 
-        async with self._lifespan(self):
-            try:
-                while not self._stopped:
-                    await self._cleanup_session()
-
-                    async with self._lock:
-                        try:
-                            logger.info(f"Trying to connect... (Client: {self.id})")
-                            await self.session.connect(self.__token)
-                            await self.session.handshake_request()
-                            logger.info(f"Connected successfully. (Client: {self.id})")
-
-                            self._ping_task = self._create_task(self._ping_loop())
-                            listen_task = self._create_task(self._safe_listen())
-                        except Exception as e:
-                            logger.error(f"Connection failed (Client: {self.id}): {e}")
-                            await asyncio.sleep(5)
-                            continue
-
-                    if run_in_background:
-                        return
-                    else:
-                        try:
-                            await listen_task
-                        except asyncio.CancelledError:
-                            logger.info(f"Listening task cancelled (Client: {self.id}).")
-                            break
-
-            except KeyboardInterrupt:
-                logger.info(f"KeyboardInterrupt received, stopping client (Client: {self.id})...")
-                await self.stop()
-            except Exception as e:
-                logger.error(f"Unhandled exception in start (Client: {self.id}): {e}")
-                await self.stop()
-                raise
-            finally:
-                if self in _CLIENTS:
-                    _CLIENTS.remove(self)
+        if run_in_background:
+            ready_future = loop.create_future()
+            self._connection_task = self._create_task(self._connection_loop(ready_future))
+            await ready_future
+        else:
+            await self._connection_loop()
 
     async def stop(self):
         """
@@ -597,6 +619,12 @@ class Client:
 
         self._stopped = True
         logger.info(f"Stopping client (Client: {self.id})...")
+
+        if hasattr(self, "_connection_task") and self._connection_task:
+            self._connection_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await self._connection_task
+            self._connection_task = None
 
         if self._ping_task:
             self._ping_task.cancel()
