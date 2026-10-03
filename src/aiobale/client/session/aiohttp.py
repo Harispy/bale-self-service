@@ -255,8 +255,20 @@ class AiohttpSession(BaseSession):
 
     async def close(self):
         self._running = False
+        for req_id, future in list(self._pending_requests.items()):
+            if not future.done():
+                future.set_exception(ClientConnectionResetError("Session closed"))
+        self._pending_requests.clear()
+
         if self.ws:
-            await self.ws.close()
+            try:
+                await self.ws.close()
+            except Exception:
+                pass
+            self.ws = None
         if self.session:
-            await self.session.close()
-        self.session = None
+            try:
+                await self.session.close()
+            except Exception:
+                pass
+            self.session = None

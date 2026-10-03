@@ -76,6 +76,9 @@ class FullGroup(BaleObject):
     discussion_group_id: Optional[int] = Field(None, alias="26")
     """ID of the linked discussion group for comments, if this is a channel."""
 
+    has_comments_enabled: IntBool = Field(False, alias="27")
+    """Whether comments are actively enabled on this channel."""
+
     privacy_mode: Optional[PrivacyMode] = Field(None, alias="28")
     """Defines who can see and join the group (e.g., public, private)."""
 

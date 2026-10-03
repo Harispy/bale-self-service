@@ -486,6 +486,13 @@ class Client:
                     await self._ping_task
             self._ping_task = None
 
+        if hasattr(self, "_listen_task") and self._listen_task:
+            self._listen_task.cancel()
+            if asyncio.current_task() != self._listen_task:
+                with suppress(asyncio.CancelledError):
+                    await self._listen_task
+            self._listen_task = None
+
     async def _send_ping(self):
         async with self._lock:
             if self.session.is_closed():
@@ -535,7 +542,7 @@ class Client:
                             logger.info(f"Connected successfully. (Client: {self.id})")
 
                             self._ping_task = self._create_task(self._ping_loop())
-                            listen_task = self._create_task(self._safe_listen())
+                            self._listen_task = self._create_task(self._safe_listen())
                             if ready_future and not ready_future.done():
                                 ready_future.set_result(True)
                         except Exception as e:
@@ -547,7 +554,7 @@ class Client:
                             continue
 
                     try:
-                        await listen_task
+                        await self._listen_task
                     except asyncio.CancelledError:
                         logger.info(f"Listening task cancelled (Client: {self.id}).")
                         break
