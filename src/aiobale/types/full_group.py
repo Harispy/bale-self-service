@@ -99,6 +99,12 @@ class FullGroup(BaleObject):
             if key in ["18", "13", "14"]:
                 continue
 
+            elif key == "17" and isinstance(value, dict):
+                # members: only sent when the reader is an admin; one entry arrives as a bare
+                # dict instead of a list (verified live). Never unwrap it like {"1": x}.
+                data[key] = [value]
+                continue
+
             elif isinstance(value, dict) and len(value) == 1 and "1" in value:
                 data[key] = value["1"]
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import List, Dict, Any, TYPE_CHECKING
+from typing import List, Dict, Any, Optional, TYPE_CHECKING
 from pydantic import Field, model_validator
 
 from ..base import BaleObject
@@ -20,6 +20,13 @@ class MembersResponse(BaleObject):
     members: List[Member] = Field(default_factory=list, alias="1")
     """List of members included in the response."""
 
+    next_offset: Optional[str] = Field(None, alias="2")
+    """Continuation token for the next page (``None`` when the list has ended).
+
+    Bale sends it as a wrapped string (``{"1": "<n>"}``) and an empty message at the end
+    (verified live).
+    """
+
     @model_validator(mode="before")
     @classmethod
     def validate_list(cls, data: Dict[str, Any]) -> Dict[str, Any]:
@@ -29,6 +36,12 @@ class MembersResponse(BaleObject):
         Ensures that if the server returns a single Member object instead of a list,
         it will be wrapped into a list to maintain consistency.
         """
+        nxt = data.get("2")
+        if isinstance(nxt, dict):
+            data["2"] = str(nxt["1"]) if nxt.get("1") not in (None, "") else None
+        elif nxt in ("", {}):
+            data["2"] = None
+
         if "1" not in data:
             return data
 

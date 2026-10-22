@@ -2141,6 +2141,11 @@ class Client:
             AiobaleError: For client-side errors.
         """
         other_messages = [self._ensure_other_message(message) for message in messages]
+        # Bale's abacus service only answers channel posts addressed as a GROUP peer:
+        # with type CHANNEL every message comes back with no reactions (verified live
+        # on channels with hundreds of reactions). Channels are groups server-side.
+        if chat_type == ChatType.CHANNEL:
+            chat_type = ChatType.GROUP
         peer = Peer(id=chat_id, type=chat_type)
 
         call = GetMessagesReactions(
@@ -2376,25 +2381,70 @@ class Client:
             BaleError: If the server returns an error.
             AiobaleError: For client-side errors.
         """
-        peer = ShortPeer(id=chat_id)
+        result = await self.load_members_page(
+            chat_id, limit=limit, next_offset=next_offset, condition=condition
+        )
+        return result.members
 
+    async def load_members_page(
+        self,
+        chat_id: int,
+        limit: int = 100,
+        next_offset: Optional[Union[int, str]] = None,
+        condition: Literal["none", "excepted_permissions", "contacts"] = "none",
+    ) -> MembersResponse:
+        """
+        Loads one page of members together with the continuation token.
+
+        Requires admin rights in channels (``PermissionDenied`` otherwise). Each member
+        carries its own join time (``Member.date``, ms) and inviter.
+
+        Args:
+            chat_id (int): The group or channel ID.
+            limit (int, optional): Page size. Defaults to 100.
+            next_offset (Optional[Union[int, str]]): Token from the previous page's
+                ``next_offset``; ``None`` for the first page.
+            condition: Optional filter, as in :meth:`load_members`.
+
+        Returns:
+            aiobale.types.responses.MembersResponse: ``members`` and ``next_offset``
+            (``None`` when the list has ended).
+        """
+        peer = ShortPeer(id=chat_id)
         condition_map = {
             "contacts": Condition(contacts=BoolValue(value=True)),
             "excepted_permissions": Condition(
                 excepted_permissions=BoolValue(value=True)
             ),
         }
-        condition_type = condition_map.get(condition)
-
         call = LoadMembers(
             group=peer,
             limit=limit,
-            next_offset=StringValue(value=str(next_offset)),
-            condition=condition_type,
+            next_offset=(
+                StringValue(value=str(next_offset)) if next_offset is not None else None
+            ),
+            condition=condition_map.get(condition),
         )
+        return await self(call)
 
-        result: MembersResponse = await self(call)
-        return result.members
+    async def iter_members(
+        self, chat_id: int, page_size: int = 100, max_pages: int = 10_000
+    ) -> AsyncGenerator[List[Member], None]:
+        """
+        Yields the full member list page by page (admin rights required).
+
+        Stops when Bale returns no continuation token or an empty page.
+        """
+        offset: Optional[str] = None
+        for _ in range(max_pages):
+            page = await self.load_members_page(
+                chat_id, limit=page_size, next_offset=offset
+            )
+            if page.members:
+                yield page.members
+            if not page.next_offset or not page.members:
+                return
+            offset = page.next_offset
 
     async def create_group(
         self,

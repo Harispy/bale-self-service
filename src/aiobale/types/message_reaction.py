@@ -37,6 +37,11 @@ class MessageReactions(BaleObject):
     Even if a single reaction exists, this field is always a list internally.
     """
 
+    @property
+    def total(self) -> int:
+        """Sum of all reaction counts on the message (every emoji)."""
+        return sum(int(r.count or 0) for r in self.reactions)
+
     @model_validator(mode="before")
     @classmethod
     def validate_list(cls, data: Dict[str, Any]) -> Dict[str, Any]:
