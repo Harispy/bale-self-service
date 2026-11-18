@@ -44,6 +44,9 @@ class InlineKeyboardButton(BaleObject):
     @classmethod
     def validate_keyboard(cls, data: Any) -> Any:
         if isinstance(data, dict):
+            # text may arrive wrapped as {"1": {"1": text}} (seen on bot posts)
+            if isinstance(data.get("1"), dict) and isinstance(data["1"].get("1"), str):
+                data = {**data, "1": data["1"]["1"]}
             if "1" in data and isinstance(data.get("1"), str):
                 for i in ("2", "3", "9"):
                     if i in data and isinstance(data[i], dict) and "1" in data[i]:
@@ -82,6 +85,11 @@ class InlineKeyboardMarkup(BaleObject):
         ) -> None:
             super().__init__(inline_keyboard=inline_keyboard, **__pydantic_kwargs)
 
+    @staticmethod
+    def _is_button(d: Any) -> bool:
+        v = d.get("1") if isinstance(d, dict) else None
+        return isinstance(v, str) or (isinstance(v, dict) and isinstance(v.get("1"), str))
+
     @model_validator(mode="before")
     @classmethod
     def validate_keyboard(cls, data: Any) -> Any:
@@ -107,11 +115,16 @@ class InlineKeyboardMarkup(BaleObject):
         if isinstance(data, dict):
             if "inline_keyboard" in data:
                 return cls.validate_keyboard(data["inline_keyboard"])
+            if "1" in data and isinstance(data["1"], dict):
+                # a single row / single button arrives as a bare dict, not a list
+                data = {**data, "1": [data["1"]]}
             if "1" in data and isinstance(data["1"], list):
                 raw_buttons = data["1"]
                 keyboard_rows = []
                 for row in raw_buttons:
-                    if isinstance(row, dict) and "1" in row:
+                    if isinstance(row, dict) and cls._is_button(row):
+                        keyboard_rows.append([InlineKeyboardButton.model_validate(row)])
+                    elif isinstance(row, dict) and "1" in row:
                         buttons_data = row["1"]
                         if isinstance(buttons_data, list):
                             btns = [
